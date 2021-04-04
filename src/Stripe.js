@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native'
+import { NativeModules, Platform, NativeEventEmitter } from 'react-native'
 import processTheme from './utils/processTheme'
 import checkArgs from './utils/checkArgs'
 import checkInit from './utils/checkInit'
@@ -9,6 +9,7 @@ const { StripeModule } = NativeModules
 
 class Stripe {
   stripeInitialized = false
+  eventEmitter = new NativeEventEmitter(StripeModule)
 
   setOptions = (options = {}) => {
     checkArgs(
@@ -59,6 +60,10 @@ class Stripe {
       android: () => this.canMakeAndroidPayPayments(),
     })()
   )
+
+  updatePaymentRequestWithItems(items = []) {
+    StripeModule.updatePaymentRequestWithItems(items)
+  }
 
   // @deprecated use paymentRequestWithNativePay
   paymentRequestWithAndroidPay = (options = {}) => {

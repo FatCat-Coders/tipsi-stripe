@@ -110,6 +110,7 @@ NSString * const TPSPaymentNetworkVisa = @"visa";
     BOOL requestIsCompleted;
 
     void (^applePayCompletion)(PKPaymentAuthorizationStatus);
+    void (^shippingContactCompletion)(PKPaymentRequestShippingContactUpdate *);
     NSError *applePayStripeError;
 }
 
@@ -132,6 +133,10 @@ NSString * const TPSPaymentNetworkVisa = @"visa";
              @"TPSErrorCodePreviousRequestNotCompleted": [@(TPSErrorCodePreviousRequestNotCompleted) stringValue],
              @"TPSErrorCodeUserCancel": [@(TPSErrorCodeUserCancel) stringValue],
              };
+}
+
+- (NSArray<NSString *> *)supportedEvents {
+    return @[@"onShippingContactUpdated"];
 }
 
 RCT_EXPORT_MODULE();
@@ -418,15 +423,7 @@ RCT_EXPORT_METHOD(paymentRequestWithApplePay:(NSArray *)items
         [shippingMethods addObject:shippingItem];
     }
 
-    NSMutableArray *summaryItems = [NSMutableArray array];
-
-    for (NSDictionary *item in items) {
-        PKPaymentSummaryItem *summaryItem = [[PKPaymentSummaryItem alloc] init];
-        summaryItem.label = item[@"label"];
-        summaryItem.amount = [NSDecimalNumber decimalNumberWithString:item[@"amount"]];
-        summaryItem.type = [@"pending" isEqualToString:item[@"type"]] ? PKPaymentSummaryItemTypePending : PKPaymentSummaryItemTypeFinal;
-        [summaryItems addObject:summaryItem];
-    }
+    NSArray *summaryItems = [self summaryItemsFromItems:items];;
 
     PKPaymentRequest *paymentRequest = [Stripe paymentRequestWithMerchantIdentifier:merchantId country:countryCode currency:currencyCode];
 
@@ -625,6 +622,19 @@ RCT_EXPORT_METHOD(openApplePaySetup) {
     };
 
     [RCTPresentedViewController() dismissViewControllerAnimated:YES completion:completion];
+}
+
+- (void)paymentAuthorizationViewController:(PKPaymentAuthorizationViewController *)controller
+                  didSelectShippingContact:(PKContact *)contact
+                                   handler:(void (^)(PKPaymentRequestShippingContactUpdate * _Nonnull))completion {
+    
+    shippingContactCompletion = completion;
+    [self sendEventWithName:@"onShippingContactUpdated" body:[self contactDetails:contact]];
+}
+
+RCT_EXPORT_METHOD(updatePaymentRequestWithItems:(NSArray *)items) {
+    PKPaymentRequestShippingContactUpdate *update = [[PKPaymentRequestShippingContactUpdate alloc] initWithPaymentSummaryItems:[self summaryItemsFromItems:items]];
+    shippingContactCompletion(update);
 }
 
 - (STPAPIClient *)newAPIClient {
@@ -943,6 +953,18 @@ RCT_EXPORT_METHOD(openApplePaySetup) {
         default:
             return @"unknown";
     }
+}
+
+- (NSArray <PKPaymentSummaryItem *> *)summaryItemsFromItems:(NSArray <NSDictionary *> *)items {
+    NSMutableArray *summaryItems = [NSMutableArray new];
+    for (NSDictionary *item in items) {
+        PKPaymentSummaryItem *summaryItem = [[PKPaymentSummaryItem alloc] init];
+        summaryItem.label = item[@"label"];
+        summaryItem.amount = [NSDecimalNumber decimalNumberWithString:item[@"amount"]];
+        summaryItem.type = [@"pending" isEqualToString:item[@"type"]] ? PKPaymentSummaryItemTypePending : PKPaymentSummaryItemTypeFinal;
+        [summaryItems addObject:summaryItem];
+    }
+    return summaryItems;
 }
 
 - (NSDictionary *)contactDetails:(PKContact*)inputContact {
