@@ -61,8 +61,8 @@ class Stripe {
     })()
   )
 
-  updatePaymentRequestWithItems(items = []) {
-    StripeModule.updatePaymentRequestWithItems(items)
+  updatePaymentRequest(errors = [], methods = [], items = []) {
+    StripeModule.updatePaymentRequest(items, methods, errors)
   }
 
   // @deprecated use paymentRequestWithNativePay

@@ -412,18 +412,9 @@ RCT_EXPORT_METHOD(paymentRequestWithApplePay:(NSArray *)items
     NSString* currencyCode = options[@"currencyCode"] ? options[@"currencyCode"] : @"USD";
     NSString* countryCode = options[@"countryCode"] ? options[@"countryCode"] : @"US";
 
-    NSMutableArray *shippingMethods = [NSMutableArray array];
-
-    for (NSDictionary *item in shippingMethodsItems) {
-        PKShippingMethod *shippingItem = [[PKShippingMethod alloc] init];
-        shippingItem.label = item[@"label"];
-        shippingItem.detail = item[@"detail"];
-        shippingItem.amount = [NSDecimalNumber decimalNumberWithString:item[@"amount"]];
-        shippingItem.identifier = item[@"id"];
-        [shippingMethods addObject:shippingItem];
-    }
-
-    NSArray *summaryItems = [self summaryItemsFromItems:items];;
+    NSArray <PKShippingMethod *> *shippingMethods = [self shippingMethodsFromItems:shippingMethodsItems];
+  
+    NSArray <PKPaymentSummaryItem *> *summaryItems = [self summaryItemsFromItems:items];
 
     PKPaymentRequest *paymentRequest = [Stripe paymentRequestWithMerchantIdentifier:merchantId country:countryCode currency:currencyCode];
 
@@ -632,8 +623,14 @@ RCT_EXPORT_METHOD(openApplePaySetup) {
     [self sendEventWithName:@"onShippingContactUpdated" body:[self contactDetails:contact]];
 }
 
-RCT_EXPORT_METHOD(updatePaymentRequestWithItems:(NSArray *)items) {
-    PKPaymentRequestShippingContactUpdate *update = [[PKPaymentRequestShippingContactUpdate alloc] initWithPaymentSummaryItems:[self summaryItemsFromItems:items]];
+RCT_EXPORT_METHOD(updatePaymentRequest:(NSArray *)items
+                       shippingMethods:(NSArray *)methods
+                                errors:(NSArray *)errors) {
+    // Currently this method is only called from shipping contact update callback
+    // Ideally, we would need to track which completion should be called here
+    PKPaymentRequestShippingContactUpdate *update = [[PKPaymentRequestShippingContactUpdate alloc] initWithErrors:[self paymentErrorsFromErrors:errors]
+                                                                                              paymentSummaryItems:[self summaryItemsFromItems:items]
+                                                                                                  shippingMethods:[self shippingMethodsFromItems:methods]];
     shippingContactCompletion(update);
 }
 
@@ -953,6 +950,42 @@ RCT_EXPORT_METHOD(updatePaymentRequestWithItems:(NSArray *)items) {
         default:
             return @"unknown";
     }
+}
+
+- (NSArray <NSError *> *)paymentErrorsFromErrors:(NSArray <NSDictionary *> *)errors {
+    NSMutableArray *paymentErrors = [NSMutableArray new];
+    for (NSDictionary *errorObject in errors) {
+        // TODO: find a way to pass specific keys
+        NSString *errorMessage = errorObject[@"error"];
+      // Map to specific errors as we can't pass generic NSError objects
+        NSString *errorType = errorObject[@"type"];
+        if ([errorType isEqualToString:@"shipping"]) {
+            [paymentErrors addObject:[PKPaymentRequest paymentShippingAddressInvalidErrorWithKey:CNPostalAddressStreetKey localizedDescription:errorMessage]];
+        } else if ([errorType isEqualToString:@"billing"]) {
+          [paymentErrors addObject:[PKPaymentRequest paymentBillingAddressInvalidErrorWithKey:CNPostalAddressStreetKey localizedDescription:errorMessage]];
+        } else if ([errorType isEqualToString:@"shipping_unserviceable"]) {
+          [paymentErrors addObject:[PKPaymentRequest paymentShippingAddressUnserviceableErrorWithLocalizedDescription:errorMessage]];
+        } else if ([errorType isEqualToString:@"contact"]) {
+          [paymentErrors addObject:[PKPaymentRequest paymentContactInvalidErrorWithContactField:PKContactFieldPostalAddress localizedDescription:errorMessage]];
+        }
+    }
+  
+    return paymentErrors;
+}
+
+- (NSArray <PKShippingMethod *> *)shippingMethodsFromItems:(NSArray <NSDictionary *> *)shippingMethodsItems {
+    NSMutableArray *shippingMethods = [NSMutableArray array];
+
+    for (NSDictionary *item in shippingMethodsItems) {
+        PKShippingMethod *shippingItem = [[PKShippingMethod alloc] init];
+        shippingItem.label = item[@"label"];
+        shippingItem.detail = item[@"detail"];
+        shippingItem.amount = [NSDecimalNumber decimalNumberWithString:item[@"amount"]];
+        shippingItem.identifier = item[@"id"];
+        [shippingMethods addObject:shippingItem];
+    }
+  
+    return shippingMethods;
 }
 
 - (NSArray <PKPaymentSummaryItem *> *)summaryItemsFromItems:(NSArray <NSDictionary *> *)items {
